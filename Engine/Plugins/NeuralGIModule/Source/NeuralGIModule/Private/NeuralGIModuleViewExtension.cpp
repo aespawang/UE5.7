@@ -46,10 +46,7 @@ void FNeuralGIModuleViewExtension::InitResources(TResourceArray<float>& DataBuff
 				}
 				{
 					const FRHITextureCreateDesc TexDesc =
-						FRHITextureCreateDesc::Create3D(
-							TEXT("VolumetricLightmapMLPTexture"),
-							Dimensions.X, Dimensions.Y, Dimensions.Z,
-							PF_FloatRGBA)
+						FRHITextureCreateDesc::Create3D(TEXT("VolumetricLightmapMLPTexture"),Dimensions.X, Dimensions.Y, Dimensions.Z,PF_A32B32G32R32F)
 						.SetFlags(ETextureCreateFlags::ShaderResource | ETextureCreateFlags::UAV)
 						.SetInitialState(ERHIAccess::UAVCompute);
 					    VolumetricLightmapMlpTexture.SafeRelease();
@@ -63,4 +60,5 @@ void FNeuralGIModuleViewExtension::InitResources(TResourceArray<float>& DataBuff
 
 void FNeuralGIModuleViewExtension::ReleaseResources()
 {
+	
 }
