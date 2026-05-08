@@ -60,5 +60,8 @@ void FNeuralGIModuleViewExtension::InitResources(TResourceArray<float>& DataBuff
 
 void FNeuralGIModuleViewExtension::ReleaseResources()
 {
-	
+	VolumetricLightmapMlpBuffer.SafeRelease();
+	VolumetricLightmapMlpSRV.SafeRelease();
+	VolumetricLightmapMlpTexture.SafeRelease();
+	VolumetricLightmapMlpTextureUAV.SafeRelease();
 }
