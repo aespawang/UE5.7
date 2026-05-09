@@ -40,6 +40,8 @@ public class NeuralGIModule : ModuleRules
 				"SlateCore",
 				"RenderCore",
 				"RHI",
+				"Renderer",
+				"Projects",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

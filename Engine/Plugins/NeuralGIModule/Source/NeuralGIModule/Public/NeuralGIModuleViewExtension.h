@@ -8,13 +8,8 @@ public:
 	explicit FNeuralGIModuleViewExtension(const FAutoRegister& AutoRegister);
 	virtual ~FNeuralGIModuleViewExtension() override;
 
-	//~ Begin ISceneViewExtension Interface
-	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override {}
-	virtual void SetupViewFamily(FSceneViewFamily& InViewFamily) override {}
-	virtual void BeginRenderViewFamily(FSceneViewFamily& InViewFamily) override {}
-
-	virtual void PreRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override;
-	//~ End ISceneViewExtension Interface
+	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override;
+	virtual void PreRenderBasePass_RenderThread(FRDGBuilder& GraphBuilder, bool bDepthBufferIsPopulated) override;
 	
 	void InitResources(TResourceArray<float>& DataBufferCPU);
 
