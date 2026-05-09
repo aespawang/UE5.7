@@ -2,10 +2,10 @@
 #include "CoreMinimal.h"
 #include "SceneViewExtension.h"
 
-class FNeuralGIModuleViewExtension final : public FWorldSceneViewExtension
+class FNeuralGIModuleViewExtension final : public FSceneViewExtensionBase
 {
 public:
-	explicit FNeuralGIModuleViewExtension(const FAutoRegister& AutoRegister, UWorld* InWorld);
+	explicit FNeuralGIModuleViewExtension(const FAutoRegister& AutoRegister);
 	virtual ~FNeuralGIModuleViewExtension() override;
 
 	//~ Begin ISceneViewExtension Interface

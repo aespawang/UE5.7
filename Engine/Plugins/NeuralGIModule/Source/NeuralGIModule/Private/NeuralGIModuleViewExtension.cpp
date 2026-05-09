@@ -6,12 +6,11 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogNeuralGI, Log, All);
 
-FNeuralGIModuleViewExtension::FNeuralGIModuleViewExtension(const FAutoRegister& AutoRegister, UWorld* InWorld)
-	: FWorldSceneViewExtension(AutoRegister, InWorld)
+FNeuralGIModuleViewExtension::FNeuralGIModuleViewExtension(const FAutoRegister& AutoRegister)
+	: FSceneViewExtensionBase(AutoRegister)
 	, Dimensions(32, 32, 32)
 {
-	UE_LOG(LogNeuralGI, Log, TEXT("FNeuralGIModuleViewExtension created for World=%s"),
-		*GetNameSafe(InWorld));
+	UE_LOG(LogNeuralGI, Log, TEXT("FNeuralGIModuleViewExtension created"));
 }
 
 FNeuralGIModuleViewExtension::~FNeuralGIModuleViewExtension()
