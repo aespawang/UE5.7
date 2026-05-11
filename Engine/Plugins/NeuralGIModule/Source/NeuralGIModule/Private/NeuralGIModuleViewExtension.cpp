@@ -1,6 +1,8 @@
 #include "NeuralGIModuleViewExtension.h"
 #include "Engine/World.h"
 #include "GlobalShader.h"
+#include "RenderGraphBuilder.h"
+#include "RenderGraphUtils.h"
 #include "ShaderParameterStruct.h"
 #include "ShaderParameterMacros.h"
 
@@ -43,7 +45,7 @@ void FNeuralGIModuleViewExtension::SetupView(FSceneViewFamily& InViewFamily, FSc
 
 void FNeuralGIModuleViewExtension::PreRenderBasePass_RenderThread(FRDGBuilder& GraphBuilder, bool bDepthBufferIsPopulated)
 {
-	
+	DispatchMlPInferCS_RenderThread(GraphBuilder, bDepthBufferIsPopulated);
 }
 
 void FNeuralGIModuleViewExtension::InitResources(TResourceArray<float>& DataBufferCPU)
@@ -78,6 +80,38 @@ void FNeuralGIModuleViewExtension::InitResources(TResourceArray<float>& DataBuff
 		}
 	);
 }
+
+void FNeuralGIModuleViewExtension::DispatchMlPInferCS_RenderThread(FRDGBuilder& GraphBuilder, bool bDepthBufferIsPopulated) const
+{
+	if (!VolumetricLightmapMlpSRV.IsValid() || !VolumetricLightmapMlpTextureUAV.IsValid()) return;
+	const TShaderMapRef<FMlpInferCS> ComputeShader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+	FMlpInferCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FMlpInferCS::FParameters>();
+	PassParameters->InVolumetricLightmapMLPBuffer = VolumetricLightmapMlpSRV;
+	PassParameters->OutVolumetricLightmapMLPTexture = VolumetricLightmapMlpTextureUAV;
+	PassParameters->Dimensions = Dimensions;
+
+	FRHITexture* TexRHI = VolumetricLightmapMlpTexture.GetReference();
+
+	const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(Dimensions, FIntVector(8,8,8));
+	GraphBuilder.AddPass(
+		RDG_EVENT_NAME("MlpInferCS"),
+		PassParameters,
+		ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
+		[PassParameters, ComputeShader, GroupCount, TexRHI](FRHICommandList& RHICmdList)
+		{
+			RHICmdList.Transition(FRHITransitionInfo(TexRHI, ERHIAccess::Unknown, ERHIAccess::UAVCompute));
+
+			SetComputePipelineState(RHICmdList, ComputeShader.GetComputeShader());
+			SetShaderParameters(RHICmdList, ComputeShader, ComputeShader.GetComputeShader(), *PassParameters);
+			RHICmdList.DispatchComputeShader(GroupCount.X, GroupCount.Y, GroupCount.Z);
+			UnsetShaderUAVs(RHICmdList, ComputeShader, ComputeShader.GetComputeShader());
+
+			RHICmdList.Transition(FRHITransitionInfo(TexRHI, ERHIAccess::UAVCompute, ERHIAccess::SRVMask));
+		}
+	);
+}
+
 
 void FNeuralGIModuleViewExtension::ReleaseResources()
 {

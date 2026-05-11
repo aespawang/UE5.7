@@ -14,7 +14,7 @@ public:
 	void InitResources(TResourceArray<float>& DataBufferCPU);
 
 private:
-	
+	void DispatchMlPInferCS_RenderThread(FRDGBuilder& GraphBuilder, bool bDepthBufferIsPopulated) const;
 	FBufferRHIRef VolumetricLightmapMlpBuffer;
 	FShaderResourceViewRHIRef VolumetricLightmapMlpSRV;
 	FTextureRHIRef VolumetricLightmapMlpTexture;
@@ -22,6 +22,5 @@ private:
 	FIntVector Dimensions;
 
 	void ReleaseResources();
-	
 	
 };
