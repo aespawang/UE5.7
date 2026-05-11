@@ -91,23 +91,23 @@ void FNeuralGIModuleViewExtension::DispatchMlPInferCS_RenderThread(FRDGBuilder& 
 	PassParameters->OutVolumetricLightmapMLPTexture = VolumetricLightmapMlpTextureUAV;
 	PassParameters->Dimensions = Dimensions;
 
-	FRHITexture* TexRHI = VolumetricLightmapMlpTexture.GetReference();
+	FTextureRHIRef TexRef = VolumetricLightmapMlpTexture;
 
 	const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(Dimensions, FIntVector(8,8,8));
 	GraphBuilder.AddPass(
 		RDG_EVENT_NAME("MlpInferCS"),
 		PassParameters,
 		ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
-		[PassParameters, ComputeShader, GroupCount, TexRHI](FRHICommandList& RHICmdList)
+		[PassParameters, ComputeShader, GroupCount, TexRef](FRHICommandList& RHICmdList)
 		{
-			RHICmdList.Transition(FRHITransitionInfo(TexRHI, ERHIAccess::Unknown, ERHIAccess::UAVCompute));
+			RHICmdList.Transition(FRHITransitionInfo(TexRef.GetReference(), ERHIAccess::Unknown, ERHIAccess::UAVCompute));
 
 			SetComputePipelineState(RHICmdList, ComputeShader.GetComputeShader());
 			SetShaderParameters(RHICmdList, ComputeShader, ComputeShader.GetComputeShader(), *PassParameters);
 			RHICmdList.DispatchComputeShader(GroupCount.X, GroupCount.Y, GroupCount.Z);
 			UnsetShaderUAVs(RHICmdList, ComputeShader, ComputeShader.GetComputeShader());
 
-			RHICmdList.Transition(FRHITransitionInfo(TexRHI, ERHIAccess::UAVCompute, ERHIAccess::SRVMask));
+			RHICmdList.Transition(FRHITransitionInfo(TexRef.GetReference(), ERHIAccess::UAVCompute, ERHIAccess::SRVMask));
 		}
 	);
 }

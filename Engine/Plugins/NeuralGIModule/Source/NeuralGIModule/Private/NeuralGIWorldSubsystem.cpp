@@ -68,6 +68,7 @@ void UNeuralGIWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		FString MapDir = FPaths::GetPath(MapAbsPath);
 		const FString LevelName = FPackageName::GetShortName(CleanPackageName);
 		const FString BinFilePath = FPaths::Combine(MapDir, LevelName + TEXT("_VLM-MLP.bin"));
+		UE_LOG(LogNeuralGISubsystem, Log, TEXT("NeuralGI: BinFilePath = %s"), *BinFilePath);
 		LoadBinData(BinFilePath, DataBufferCPU);
 	}
 	ViewExtension->InitResources(DataBufferCPU);
