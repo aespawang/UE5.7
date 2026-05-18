@@ -387,6 +387,7 @@ public:
 		FSceneTextures& SceneTextures,
 		const FScene* Scene,
 		bool bDoParallelPass);
+
 	/**
 	 * Runs water pre-pass if enabled and returns an RDG-allocated object with intermediates, or null.
 	 */

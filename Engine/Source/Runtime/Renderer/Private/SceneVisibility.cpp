@@ -92,6 +92,15 @@ static FAutoConsoleVariableRef CVarMinScreenRadiusForDepthPrepass(
 	ECVF_RenderThreadSafe
 	);
 
+// NeuralGI CustomMeshPass：启用与否的【唯一信源】 = EngineShowFlags.LightMapDensity（复用 Lightmap Density ViewMode 入口）。
+// 设计上：CustomMeshPass 直接替换原 LightMapDensity 路径，复用其可见性收集 / BasePass 互斥替身 / EngineShowFlagOverride 画面净化。
+// 进入条件与引擎原 LightMapDensity 完全对齐：需 AllowDebugViewmodes() 为真。
+// （Shader 变体切换由 r.NeuralGI.CustomMeshPass.Source 控制，与启用与否正交。）
+static FORCEINLINE bool IsNeuralGICustomMeshPassEnabled(const FEngineShowFlags& ShowFlags)
+{
+	return ShowFlags.LightMapDensity && AllowDebugViewmodes();
+}
+
 static TAutoConsoleVariable<int32> CVarTemporalAASamples(
 	TEXT("r.TemporalAASamples"),
 	8,
@@ -1733,6 +1742,12 @@ void FRelevancePacket::ComputeRelevance(FDynamicPrimitiveIndexList& DynamicPrimi
 									DrawCommandPacket.AddCommandsForMesh(PrimitiveIndex, PrimitiveSceneInfo, StaticMeshRelevance, StaticMesh, CullingPayloadFlags, Scene, bCanCache, EMeshPass::AnisotropyPass);
 								}
 
+								// NeuralGI CustomMeshPass：仅在 ShowFlag 启用 + Deferred + 不透明（Opaque/Masked）通道时收集。
+								if (IsNeuralGICustomMeshPassEnabled(View.Family->EngineShowFlags) && ShadingPath == EShadingPath::Deferred && ViewRelevance.bOpaque)
+								{
+									DrawCommandPacket.AddCommandsForMesh(PrimitiveIndex, PrimitiveSceneInfo, StaticMeshRelevance, StaticMesh, CullingPayloadFlags, Scene, bCanCache, EMeshPass::CustomMeshPass);
+								}
+
 								if (ViewRelevance.bRenderCustomDepth && bRenderCustomDepth)
 								{
 									DrawCommandPacket.AddCommandsForMesh(PrimitiveIndex, PrimitiveSceneInfo, StaticMeshRelevance, StaticMesh, CullingPayloadFlags, Scene, bCanCache, EMeshPass::CustomDepth);
@@ -2417,6 +2432,13 @@ static void ComputeDynamicMeshRelevance(
 			{
 				PassMask.Set(EMeshPass::AnisotropyPass);
 				View.NumVisibleDynamicMeshElements[EMeshPass::AnisotropyPass] += NumElements;
+			}
+
+			// NeuralGI CustomMeshPass（动态网格分支）：与静态网格保持一致，仅 ShowFlag 启用 + Deferred + 不透明。
+			if (IsNeuralGICustomMeshPassEnabled(View.Family->EngineShowFlags) && ShadingPath == EShadingPath::Deferred && ViewRelevance.bOpaque)
+			{
+				PassMask.Set(EMeshPass::CustomMeshPass);
+				View.NumVisibleDynamicMeshElements[EMeshPass::CustomMeshPass] += NumElements;
 			}
 
 			if (ShadingPath == EShadingPath::Mobile)

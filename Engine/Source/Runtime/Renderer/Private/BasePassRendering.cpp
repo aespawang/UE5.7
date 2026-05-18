@@ -1446,6 +1446,13 @@ static void RenderEditorPrimitives(
 	}
 }
 
+// NeuralGI：定义于 CustomMeshPassRendering.cpp。复用 Lightmap Density ViewMode 入口：在下方互斥替身分支中直接取代
+// 原 RenderLightMapDensities 调用，启用与否的唯一信源同为 ViewFamily.EngineShowFlags.LightMapDensity。
+extern void RenderCustomMeshPass(
+	FRDGBuilder& GraphBuilder,
+	TArrayView<const FViewInfo> Views,
+	const FRenderTargetBindingSlots& RenderTargets);
+
 void FDeferredShadingSceneRenderer::RenderBasePassInternal(
 	FDeferredShadingSceneRenderer& Renderer,
 	FRDGBuilder& GraphBuilder,
@@ -1575,8 +1582,9 @@ void FDeferredShadingSceneRenderer::RenderBasePassInternal(
 
 		if (bRenderLightmapDensity)
 		{
-			// Override the base pass with the lightmap density pass if the viewmode is enabled.
-			RenderLightMapDensities(GraphBuilder, InViews, BasePassRenderTargets);
+			// NeuralGI：复用 Lightmap Density ViewMode 入口，原 RenderLightMapDensities 调用被 CustomMeshPass 完全取代。
+			// RenderLightMapDensities(GraphBuilder, InViews, BasePassRenderTargets);
+			RenderCustomMeshPass(GraphBuilder, InViews, BasePassRenderTargets);
 		}
 		else if (ViewFamily.UseDebugViewPS())
 		{

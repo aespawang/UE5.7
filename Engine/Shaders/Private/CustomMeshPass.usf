@@ -1,0 +1,89 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	CustomMeshPass.usf
+	NeuralGI 项目用：CustomMeshPass 的 VS / PS。
+	功能：逐像素采样 VolumetricLightmap 的 Ambient（SH L0）并输出。
+	预留 Permutation：CUSTOM_MESH_PASS_SOURCE
+	  0 = Raw VLM Ambient（默认）
+	  1 = NeuralGI MLP Inference（占位，后续接入）
+=============================================================================*/
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/SHCommon.ush"
+#include "/Engine/Private/VolumetricLightmapShared.ush"
+#include "/Engine/Generated/Material.ush"
+#include "/Engine/Generated/VertexFactory.ush"
+
+#ifndef CUSTOM_MESH_PASS_SOURCE
+#define CUSTOM_MESH_PASS_SOURCE 0
+#endif
+
+#define CUSTOM_MESH_PASS_SOURCE_VLM_AMBIENT   0
+#define CUSTOM_MESH_PASS_SOURCE_MLP_INFERENCE 1
+
+//------------------------------------------------------------------------------
+// VS -> PS Interpolants
+//------------------------------------------------------------------------------
+struct FCustomMeshPassVSToPS
+{
+	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
+	float3 WorldPosition : TEXCOORD7;
+	float4 Position      : SV_POSITION;
+};
+
+//------------------------------------------------------------------------------
+// Vertex Shader
+//------------------------------------------------------------------------------
+void MainVS(FVertexFactoryInput Input, out FCustomMeshPassVSToPS Output)
+{
+	ResolvedView = ResolveView();
+
+	FVertexFactoryIntermediates VFIntermediates = GetVertexFactoryIntermediates(Input);
+	float4 WorldPositionExcludingWPO = VertexFactoryGetWorldPosition(Input, VFIntermediates);
+	float4 WorldPosition = WorldPositionExcludingWPO;
+
+	float3x3 TangentToLocal = VertexFactoryGetTangentToLocal(Input, VFIntermediates);
+	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(
+		Input, VFIntermediates, WorldPosition.xyz, TangentToLocal);
+
+	Output.Position = INVARIANT(mul(WorldPosition, ResolvedView.TranslatedWorldToClip));
+	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(
+		Input, VFIntermediates, VertexParameters);
+
+	// 写出 TranslatedWorld 空间下的位置：VLM 采样需要 World，下面 PS 中再去掉 PreViewTranslation
+	Output.WorldPosition = WorldPosition.xyz;
+}
+
+//------------------------------------------------------------------------------
+// Pixel Shader
+//------------------------------------------------------------------------------
+void MainPS(
+	FCustomMeshPassVSToPS In, out float4 OutColor : SV_Target0)
+{
+	ResolvedView = ResolveView();
+
+	// VertexFactoryGetWorldPosition 返回的是 TranslatedWorld（见 BasePassVertexShader.usf 中
+	// "WorldPosition is in fact TranslatedWorldPosition" 注释 / LocalVertexFactory.ush 实现）。
+	// VS 透传的 In.WorldPosition 即 TranslatedWorld；
+	// VLM 采样要求绝对世界空间，故减去 PreViewTranslation 还原为 AbsoluteWorld。
+	float3 TranslatedWorldPosition = In.WorldPosition;
+	float3 AbsoluteWorldPosition   = TranslatedWorldPosition - DFHackToFloat(ResolvedView.PreViewTranslation);
+
+#if CUSTOM_MESH_PASS_SOURCE == CUSTOM_MESH_PASS_SOURCE_VLM_AMBIENT
+	// ------- 路径 A：直接采样原始 VLM Ambient -------
+	float3 BrickUVs = ComputeVolumetricLightmapBrickTextureUVs(AbsoluteWorldPosition);
+	// float3 Ambient  = GetVolumetricLightmapAmbient(BrickUVs);
+	float3 Ambient = float3(0.0f, 1.0f, 1.0f);
+#elif CUSTOM_MESH_PASS_SOURCE == CUSTOM_MESH_PASS_SOURCE_MLP_INFERENCE
+	// ------- 路径 B：NeuralGI MLP 推理结果（占位） -------
+	// TODO[NeuralGI]：在此处接入 NeuralGI 的 3D 纹理采样函数，
+	//   例如：float3 Ambient = SampleNeuralGIMlpAmbient(AbsoluteWorldPosition);
+	// 当前先输出洋红色作为占位，便于人眼识别"这是 MLP 分支"。
+	float3 Ambient = float3(1.0f, 0.0f, 1.0f);
+#else
+	float3 Ambient = float3(0.0f, 0.0f, 0.0f);
+#endif
+
+	OutColor = float4(Ambient, 1.0f);
+}
