@@ -71,10 +71,11 @@ void MainPS(
 	float3 AbsoluteWorldPosition   = TranslatedWorldPosition - DFHackToFloat(ResolvedView.PreViewTranslation);
 
 #if CUSTOM_MESH_PASS_SOURCE == CUSTOM_MESH_PASS_SOURCE_VLM_AMBIENT
-	// ------- 路径 A：直接采样原始 VLM Ambient -------
+	// ------- 路径 A：采样 VLM SH-L0 → Diffuse Lighting -------
 	float3 BrickUVs = ComputeVolumetricLightmapBrickTextureUVs(AbsoluteWorldPosition);
-	// float3 Ambient  = GetVolumetricLightmapAmbient(BrickUVs);
-	float3 Ambient = float3(0.0f, 1.0f, 1.0f);
+	FOneBandSHVectorRGB IrradianceSH    = GetVolumetricLightmapSH1(BrickUVs);
+	FOneBandSHVector    DiffuseTransfer = CalcDiffuseTransferSH1(1);
+	float3 Ambient = max(float3(0.0f, 0.0f, 0.0f), DotSH1(IrradianceSH, DiffuseTransfer)) / PI;
 #elif CUSTOM_MESH_PASS_SOURCE == CUSTOM_MESH_PASS_SOURCE_MLP_INFERENCE
 	// ------- 路径 B：NeuralGI MLP 推理结果（占位） -------
 	// TODO[NeuralGI]：在此处接入 NeuralGI 的 3D 纹理采样函数，
