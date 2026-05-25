@@ -22,6 +22,7 @@
 #include "DataDrivenShaderPlatformInfo.h"
 #include "RenderGraphUtils.h"
 #include "InstanceCulling/InstanceCullingContext.h"
+#include "HAL/IConsoleManager.h"
 
 //==============================================================================
 // 5.3 Shader 声明
@@ -246,10 +247,21 @@ bool FCustomMeshPassProcessor::Process(
 	FVertexFactoryType* VertexFactoryType = VertexFactory->GetType();
 
 	// ---- 拉取 Shader ----
-	// 一期固定使用 SourceDim = 0（Raw VLM Ambient）。
-	// 后续切换 MLP 推理路径时，可在 Pass 渲染入口处根据 CVar 决定 PermutationVector。
+	// 5.6.3 策略 A：PS Permutation 在 DrawCommand 构建期读取 CVar `r.NeuralGI.CustomMeshPass.Source`
+	//   - 0 -> 采样原始 VLM Ambient（默认）
+	//   - 1 -> 采样 NeuralGI MLP 推理结果（占位）
+	// CVar 由 NeuralGIModule 插件在 StartupModule 中注册（详见 CustomMeshPass_Design.md §5.6.3）。
+	// 这里通过名字反查 + 静态缓存的方式消费，与 NeuralGIModule 之间无任何符号依赖。
+	// 注意（策略 A 的已知限制）：
+	//   * 静态网格走 MeshDrawCommand cache，CVar 翻转后不会立即生效，
+	//     需要触发 cache 重建（如切换 ViewMode、重新加载关卡或 r.InvalidateCachedShaders）方可生效；
+	//   * 动态网格每帧重建，立即生效。
+	static IConsoleVariable* CVarCustomMeshPassSource =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("r.NeuralGI.CustomMeshPass.Source"));
+	const int32 SourceDim = CVarCustomMeshPassSource ? FMath::Clamp(CVarCustomMeshPassSource->GetInt(), 0, 1) : 0;
+
 	FCustomMeshPassPS::FPermutationDomain PSPermutationVector;
-	PSPermutationVector.Set<FCustomMeshPassPS::FSourceDim>(0);
+	PSPermutationVector.Set<FCustomMeshPassPS::FSourceDim>(SourceDim);
 
 	FMaterialShaderTypes ShaderTypes;
 	ShaderTypes.AddShaderType<FCustomMeshPassVS>();
