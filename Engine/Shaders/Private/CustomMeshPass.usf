@@ -23,6 +23,15 @@
 #define CUSTOM_MESH_PASS_SOURCE_MLP_INFERENCE 1
 
 //------------------------------------------------------------------------------
+// 5.6.4：NeuralGI MLP 3D Texture（Mesh Pass Loose Parameter）
+//   - 由 FCustomMeshPassPS::GetShaderBindings 通过反向桥写入；
+//   - 资源未就绪时引擎侧自动绑定黑色 3D 纹理（GBlackVolumeTexture）作为兜底；
+//   - 仅 MLP 分支会真正采样，VLM 分支不引用。
+//------------------------------------------------------------------------------
+Texture3D    NeuralGIMlpTexture;
+SamplerState NeuralGIMlpTextureSampler;
+
+//------------------------------------------------------------------------------
 // VS -> PS Interpolants
 //------------------------------------------------------------------------------
 struct FCustomMeshPassVSToPS
@@ -70,18 +79,30 @@ void MainPS(
 	float3 TranslatedWorldPosition = In.WorldPosition;
 	float3 AbsoluteWorldPosition   = TranslatedWorldPosition - DFHackToFloat(ResolvedView.PreViewTranslation);
 
+	FOneBandSHVectorRGB IrradianceSH;
+	FOneBandSHVector    DiffuseTransfer = CalcDiffuseTransferSH1(1);
+
 #if CUSTOM_MESH_PASS_SOURCE == CUSTOM_MESH_PASS_SOURCE_VLM_AMBIENT
 	// ------- 路径 A：采样 VLM SH-L0 → Diffuse Lighting -------
 	float3 BrickUVs = ComputeVolumetricLightmapBrickTextureUVs(AbsoluteWorldPosition);
-	FOneBandSHVectorRGB IrradianceSH    = GetVolumetricLightmapSH1(BrickUVs);
-	FOneBandSHVector    DiffuseTransfer = CalcDiffuseTransferSH1(1);
+	IrradianceSH    = GetVolumetricLightmapSH1(BrickUVs);
 	float3 Ambient = max(float3(0.0f, 0.0f, 0.0f), DotSH1(IrradianceSH, DiffuseTransfer)) / PI;
 #elif CUSTOM_MESH_PASS_SOURCE == CUSTOM_MESH_PASS_SOURCE_MLP_INFERENCE
-	// ------- 路径 B：NeuralGI MLP 推理结果（占位） -------
-	// TODO[NeuralGI]：在此处接入 NeuralGI 的 3D 纹理采样函数，
-	//   例如：float3 Ambient = SampleNeuralGIMlpAmbient(AbsoluteWorldPosition);
-	// 当前先输出洋红色作为占位，便于人眼识别"这是 MLP 分支"。
-	float3 Ambient = float3(1.0f, 0.0f, 1.0f);
+	// ------- 路径 B：NeuralGI MLP 推理结果（5.6.4 通路验证） -------
+	// 当前先以固定 UV (0.5, 0.5, 0.5) 采样体素中心，验证：
+	//   1) Loose Parameter 绑定通路正确（NeuralGIMlpTexture / Sampler 都已生效）；
+	//   2) 反向桥已把 NeuralGIModule 的 3D 纹理传到了本 PS。
+	// 后续步骤（5.7+）将替换为按 AbsoluteWorldPosition 计算 UVW 的真实采样。
+	// float3 Ambient = NeuralGIMlpTexture.SampleLevel(NeuralGIMlpTextureSampler, float3(0.5f, 0.5f, 0.5f), 0).rgb;
+	float3 IndirectionVolumeUVs = clamp(AbsoluteWorldPosition * View.VolumetricLightmapWorldToUVScale + View.VolumetricLightmapWorldToUVAdd, 0.0f, .99f);
+	float3 TotalTextureSize = View.VolumetricLightmapIndirectionTextureSize * View.VolumetricLightmapBrickSize;
+	float3 SampleCoord = (IndirectionVolumeUVs * TotalTextureSize + 0.5f) / TotalTextureSize;
+	float3 Data = Texture3DSampleLevel(NeuralGIMlpTexture, NeuralGIMlpTextureSampler, SampleCoord, 0).xyz;
+	IrradianceSH.R.V = Data.x;
+	IrradianceSH.G.V = Data.y;
+	IrradianceSH.B.V = Data.z;
+	float3 Ambient = max(float3(0.0f, 0.0f, 0.0f), DotSH1(IrradianceSH, DiffuseTransfer)) / PI;
+	// Ambient = float3(1.0f, 0.0f, 1.0f);
 #else
 	float3 Ambient = float3(0.0f, 0.0f, 0.0f);
 #endif

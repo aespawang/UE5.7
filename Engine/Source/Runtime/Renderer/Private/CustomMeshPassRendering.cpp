@@ -23,6 +23,20 @@
 #include "RenderGraphUtils.h"
 #include "InstanceCulling/InstanceCullingContext.h"
 #include "HAL/IConsoleManager.h"
+#include "NeuralGIBridge.h"
+#include "SystemTextures.h"
+
+//==============================================================================
+// 5.6.4 反向桥定义
+//------------------------------------------------------------------------------
+// 全局函数指针定义，声明见 NeuralGIBridge.h。
+// 由 NeuralGIModule 插件在 UNeuralGIWorldSubsystem::Initialize 中赋值，
+// Deinitialize 中清空，确保 Renderer 与具体插件之间无任何符号依赖。
+//==============================================================================
+namespace NeuralGIBridge
+{
+	FGetMlpTextureFn GGetMlpTexture = nullptr;
+}
 
 //==============================================================================
 // 5.3 Shader 声明
@@ -88,8 +102,21 @@ public:
 };
 
 /**
+ * 5.6.4：通过 Mesh Pass Loose Parameter 携带 NeuralGI MLP 3D 纹理给 PS。
+ * 该 ElementData 在 FCustomMeshPassProcessor::Process 中按帧填充（通过反向桥取纹理），
+ * 由 FCustomMeshPassPS::GetShaderBindings 写入 ShaderBindings。
+ */
+class FCustomMeshPassShaderElementData : public FMeshMaterialShaderElementData
+{
+public:
+	FRHITexture* MlpTextureRHI = nullptr;
+};
+
+/**
  * Pixel Shader：采样 VLM Ambient（或 MLP 推理结果），输出 RGB。
  * 提供 FSourceDim Permutation，便于一键切换到 NeuralGI MLP 数据源。
+ * 5.6.4：附加 Loose Texture/Sampler 绑定 NeuralGIMlpTexture（仅 MLP 分支需要，
+ *        但绑定本身始终存在；Source=0 时 Shader 端不会引用，Driver 会忽略）。
  */
 class FCustomMeshPassPS : public FMeshMaterialShader
 {
@@ -109,7 +136,34 @@ public:
 
 	explicit FCustomMeshPassPS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FMeshMaterialShader(Initializer)
-	{}
+	{
+		NeuralGIMlpTexture.Bind(Initializer.ParameterMap, TEXT("NeuralGIMlpTexture"));
+		NeuralGIMlpTextureSampler.Bind(Initializer.ParameterMap, TEXT("NeuralGIMlpTextureSampler"));
+	}
+
+	void GetShaderBindings(
+		const FScene* Scene,
+		ERHIFeatureLevel::Type FeatureLevel,
+		const FPrimitiveSceneProxy* PrimitiveSceneProxy,
+		const FMaterialRenderProxy& MaterialRenderProxy,
+		const FMaterial& Material,
+		const FCustomMeshPassShaderElementData& ShaderElementData,
+		FMeshDrawSingleShaderBindings& ShaderBindings) const
+	{
+		FMeshMaterialShader::GetShaderBindings(
+			Scene, FeatureLevel, PrimitiveSceneProxy,
+			MaterialRenderProxy, Material, ShaderElementData, ShaderBindings);
+
+		ShaderBindings.AddTexture(
+			NeuralGIMlpTexture,
+			NeuralGIMlpTextureSampler,
+			TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI(),
+			ShaderElementData.MlpTextureRHI);
+	}
+
+private:
+	LAYOUT_FIELD(FShaderResourceParameter, NeuralGIMlpTexture);
+	LAYOUT_FIELD(FShaderResourceParameter, NeuralGIMlpTextureSampler);
 };
 
 IMPLEMENT_SHADER_TYPE(, FCustomMeshPassVS, TEXT("/Engine/Private/CustomMeshPass.usf"), TEXT("MainVS"), SF_Vertex);
@@ -282,8 +336,13 @@ bool FCustomMeshPassProcessor::Process(
 		return false;
 	}
 
-	FMeshMaterialShaderElementData ShaderElementData;
+	FCustomMeshPassShaderElementData ShaderElementData;
 	ShaderElementData.InitializeMeshMaterialData(ViewIfDynamicMeshCommand, PrimitiveSceneProxy, MeshBatch, StaticMeshId, false);
+
+	// 5.6.4：通过反向桥取 NeuralGI MLP 3D 纹理；插件未注册或资源未就绪时回退黑色 3D 纹理（避免空绑定）。
+	//        SystemTextures 黑纹理在 Renderer 启动时分配，永远存活，作为兜底安全可靠。
+	FRHITexture* MlpTexFromBridge = NeuralGIBridge::GGetMlpTexture ? NeuralGIBridge::GGetMlpTexture() : nullptr;
+	ShaderElementData.MlpTextureRHI = MlpTexFromBridge ? MlpTexFromBridge : GBlackVolumeTexture->TextureRHI.GetReference();
 
 	const FMeshDrawCommandSortKey SortKey = CalculateMeshStaticSortKey(
 		CustomMeshPassShaders.VertexShader, CustomMeshPassShaders.PixelShader);
